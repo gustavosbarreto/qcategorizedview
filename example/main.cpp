@@ -1,4 +1,6 @@
 #include <QApplication>
+#include <QDir>
+#include <QSettings>
 #include <QDebug>
 
 #include "qcategorizedview.h"
@@ -31,53 +33,39 @@ private:
     QExplicitlySharedDataPointer<ConfigPaneData> d;
 };
 
+static QStringList preferredCategoryOrder;
+
+static bool categorySorter(const ConfigPane &a, const ConfigPane &b)
+{
+    int aIdx = preferredCategoryOrder.indexOf(a.category());
+    int bIdx = preferredCategoryOrder.indexOf(b.category());
+    if (aIdx < 0)
+        return false;
+    return aIdx < bIdx;
+}
+
 class ConfigPaneModel: public QAbstractListModel
 {
 public:
     ConfigPaneModel(): QAbstractListModel()
     {
-        ConfigPane c1;
-        c1.id() = "id1";
-        c1.name() = "Appearance";
-        c1.category() = "Personal";
-        m_list.append(c1);
+        if (preferredCategoryOrder.isEmpty())
+            preferredCategoryOrder << "Personal" << "Hardware" << "System";
 
-        ConfigPane c2;
-        c2.id() = "id2";
-        c2.name() = "Screen Saver";
-        c2.category() = "Personal";
-        m_list.append(c2);
+        QDir dir(qApp->applicationDirPath() + "/items/");
+        Q_FOREACH (const QFileInfo &fileInfo, dir.entryInfoList(QStringList() << "*.desktop"))
+        {
+            QSettings desktopFile(fileInfo.filePath(), QSettings::IniFormat);
+            desktopFile.beginGroup("Desktop Entry");
 
-        ConfigPane c3;
-        c3.id() = "id1";
-        c3.name() = "Dock";
-        c3.category() = "Personal";
-        m_list.append(c3);
+            ConfigPane pane;
+            pane.id() = desktopFile.value("Icon").toString();
+            pane.name() = desktopFile.value("Name").toString();
+            pane.category() = desktopFile.value("Category").toString();
+            m_list.append(pane);
+        }
 
-        ConfigPane c4;
-        c4.id() = "id1";
-        c4.name() = "Keyboard & Mouse";
-        c4.category() = "Hardware";
-        m_list.append(c4);
-
-        ConfigPane c5;
-        c5.id() = "id1";
-        c5.name() = "Sound";
-        c5.category() = "Hardware";
-        m_list.append(c5);
-
-        ConfigPane c6;
-        c6.id() = "id1";
-        c6.name() = "Sound";
-        c6.category() = "System";
-        m_list.append(c6);
-
-        ConfigPane c7;
-        c7.id() = "id1";
-        c7.name() = "Date & Time";
-        c7.category() = "System";
-        m_list.append(c7);
-
+        qSort(m_list.begin(), m_list.end(), categorySorter);
     }
 
     ~ConfigPaneModel() { }
@@ -101,6 +89,13 @@ public:
             return m_list[index.row()].category();
         if (role == Qt::UserRole)
             return m_list[index.row()].id();
+        if (role == Qt::DecorationRole)
+        {
+            if (!QFile::exists(qApp->applicationDirPath() + "/icons/" + m_list[index.row()].id()))
+                qFatal("asdads");
+
+            return QIcon(qApp->applicationDirPath() + "/icons/" + m_list[index.row()].id());
+        }
         return QVariant();
     }
 
@@ -116,14 +111,17 @@ int main(int argc, char *argv[])
     ConfigPaneModel *model = new ConfigPaneModel();
 
     QCategorizedView *view = new QCategorizedView;
-    view->setCategoryDrawer(new QCategoryDrawer());
+    view->setViewMode(QListView::IconMode);
+    view->setIconSize(QSize(48, 48));
+    view->setGridSize(QSize(140, 74));
+    view->setCategoryDrawer(new QCategoryDrawerV3(view));
 
     QCategorizedSortFilterProxyModel *proxyModel = new QCategorizedSortFilterProxyModel();
     proxyModel->setCategorizedModel(true);
     proxyModel->setSourceModel(model);
 
     view->setModel(proxyModel);
-    view->resize(200, 400);
+    view->resize(640, 400);
     view->show();
 
     return app.exec();
